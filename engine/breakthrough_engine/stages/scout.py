@@ -10,7 +10,7 @@ from .. import prompts
 from ..config import Config
 from ..llm import LLM
 from ..models import Paper
-from ..sources import biorxiv, clinicaltrials, europepmc
+from ..sources import biorxiv, clinicaltrials, europepmc, nih_reporter
 from ..sources.http import SourceError
 from ..store import Store
 
@@ -42,6 +42,8 @@ def fetch(source: str, cfg: Config, since: date, until: date, llm: LLM | None) -
         return biorxiv.recent(source, since, until, cfg.topics, cfg.max_preprints_scanned)
     if source == "clinicaltrials":
         return [p for topic in cfg.topics for p in clinicaltrials.search(topic, since, cfg.max_per_topic)]
+    if source == "nih_reporter":
+        return [p for topic in cfg.topics for p in nih_reporter.search(topic, since, until, cfg.max_per_topic)]
     if source == "web":
         if llm is None:
             raise SourceError("the web source needs the Claude API")

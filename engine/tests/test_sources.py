@@ -4,7 +4,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from breakthrough_engine.sources import biorxiv, clinicaltrials, europepmc
+from breakthrough_engine.sources import biorxiv, clinicaltrials, europepmc, nih_reporter
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -55,3 +55,37 @@ def test_clinicaltrials_parses_device_study(monkeypatch):
     assert "DEVICE: Fluid patch" in study.abstract
     assert study.published == "2026-10-13"
     assert study.url == "https://clinicaltrials.gov/study/NCT09000001"
+
+
+def test_nih_reporter_parses_new_grants(monkeypatch):
+    bodies = []
+
+    def fake_post_json(url, body, **_):
+        bodies.append(body)
+        return load("nih_reporter_search.json")
+
+    monkeypatch.setattr(nih_reporter, "post_json", fake_post_json)
+    grants = nih_reporter.search("wearable sensor", date(2026, 10, 10), date(2026, 10, 17), limit=10)
+
+    assert len(bodies) == 1  # the page held every result the API reported
+    criteria = bodies[0]["criteria"]
+    assert criteria["award_notice_date"] == {"from_date": "2026-10-10", "to_date": "2026-10-17"}
+    assert criteria["advanced_text_search"]["search_text"] == "wearable sensor"
+    assert criteria["award_types"] == ["1", "2"]
+
+    assert [g.source_id for g in grants] == ["90000001", "90000002"]
+    sbir = grants[0]
+    assert sbir.kind == "grant" and sbir.key == "nih_reporter:90000001"
+    assert sbir.title == "A wearable patch to detect early heart failure decompensation"
+    assert sbir.published == "2026-10-14"
+    assert sbir.url == "https://reporter.nih.gov/project-details/90000001"
+    assert sbir.venue == "NIH NHLBI R43: EXAMPLE SENSORS, INC."
+    assert sbir.authors == "Ada Example, Ben Example"
+    assert sbir.extra["small_business"] is True
+    assert "Small-business award, so the organization is a company" in sbir.abstract
+    assert "$305,000" in sbir.abstract
+
+    university = grants[1]
+    assert university.extra["small_business"] is False
+    assert university.authors == "LAB, CARA"
+    assert "Small-business" not in university.abstract

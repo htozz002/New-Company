@@ -19,7 +19,12 @@ unknown or you could not verify it, say so plainly instead of guessing."""
 # --------------------------------------------------------------------------- triage
 
 TRIAGE_PROMPT = """\
-Screen these {n} research items for breakthroughs that could become a product.
+Screen these {n} research items for breakthroughs that could become a product, \
+and for evidence that patients are poorly served today.
+
+Items are papers, preprints, newly registered trials and newly awarded grants. \
+A trial or a grant shows work before its results exist; judge it on what it \
+sets out to show and the preliminary results it builds on.
 
 A strong candidate shows a new capability or a large improvement over current \
 practice, has evidence beyond theory, and points at something that could be \
@@ -31,7 +36,14 @@ Score each item:
 - buildability_score (0-10): how soon a small company could build a working \
 product on it (10 = prototype in months with existing parts; 0 = decades away).
 - product_type: what a product built on it would most likely be.
-- is_candidate: true only if it deserves a full evaluation.
+- is_candidate: true only if it deserves a full evaluation as a breakthrough.
+- unmet_need_score (0-10): how strongly the item shows that patients are poorly \
+served today, for example a rigorous study finding that a widely used product, \
+test or standard of care performs badly (10 = a large, rigorous human study of a \
+widely used product that fails; 0 = no such evidence). Score this even when \
+there is no breakthrough: a documented failure of an existing product points at \
+an open field.
+- need: one sentence naming the gap and who it hurts, or an empty string.
 - reason: one sentence.
 
 Return one entry per item, using each item's ref exactly.
@@ -53,14 +65,70 @@ TRIAGE_SCHEMA = {
                     "breakthrough_score": {"type": "integer", "description": "0 to 10"},
                     "buildability_score": {"type": "integer", "description": "0 to 10"},
                     "is_candidate": {"type": "boolean"},
+                    "unmet_need_score": {"type": "integer", "description": "0 to 10"},
+                    "need": {"type": "string"},
                     "reason": {"type": "string"},
                 },
-                "required": ["ref", "product_type", "breakthrough_score", "buildability_score", "is_candidate", "reason"],
+                "required": ["ref", "product_type", "breakthrough_score", "buildability_score", "is_candidate",
+                             "unmet_need_score", "need", "reason"],
                 "additionalProperties": False,
             },
         }
     },
     "required": ["items"],
+    "additionalProperties": False,
+}
+
+# --------------------------------------------------------------------------- ownership
+
+OWNERSHIP_PROMPT = """\
+Before we spend time evaluating this finding, check whether someone already \
+owns it. Search for:
+1. A company spun out of the authors' lab or university to commercialize this \
+work, or a license of it to a company. Search the authors' names and the \
+technology's name.
+2. Authors who founded, advise or work for a company that sells or develops \
+this product.
+3. A funded company that already sells, or has filed with the FDA, the same \
+product: the same intended use with the same core approach.
+
+Keep it short. Report what you found with sources, and say plainly when you \
+searched and found nothing.
+
+{subject}"""
+
+OWNERSHIP_VERDICT_PROMPT = """\
+Decide from these search notes whether a new company could still own the \
+product this finding points to.
+
+- owned: a company, including the lab's own spinout, already sells it, has \
+filed it with a regulator, or holds an exclusive license to it.
+- contested: funded companies sell close alternatives, but this exact approach \
+looks unclaimed.
+- open: nobody was found working on this product.
+- unknown: the notes are not enough to tell.
+
+Name the owner or the closest company (empty if none), give the evidence in one \
+or two sentences, and name the best adjacent product a new company could own \
+instead (empty if the field is open or you see none).
+
+{subject}
+
+<search_notes>
+{notes}
+</search_notes>"""
+
+OWNERSHIP_STATUSES = ["open", "contested", "owned", "unknown"]
+
+OWNERSHIP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string", "enum": OWNERSHIP_STATUSES},
+        "owner": {"type": "string"},
+        "evidence": {"type": "string"},
+        "wedge": {"type": "string"},
+    },
+    "required": ["status", "owner", "evidence", "wedge"],
     "additionalProperties": False,
 }
 
@@ -72,8 +140,9 @@ to build a product on it.
 
 Find out, with sources:
 1. Who is already building products on this or on close alternatives: companies, \
-startups, big medtech or pharma, and university spinouts. Note funding or stage \
-when you can find it.
+startups, big medtech or pharma, and university spinouts, including any company \
+the paper's own authors, lab or university started or licensed it to. Note \
+funding or stage when you can find it.
 2. What existing products or standard of care it would compete with.
 3. Regulatory precedent: similar products the FDA has cleared or approved, and \
 the likely pathway.
@@ -81,7 +150,8 @@ the likely pathway.
 5. Grants or programs that fund this kind of work right now.
 6. Any patents or key labs that control the core technology.
 
-Be concrete. Say clearly when you searched and found nothing.
+Be concrete. Say clearly when you searched and found nothing. If an ownership \
+check is included below, start from it and confirm or correct it.
 
 {subject}"""
 
@@ -90,7 +160,9 @@ DIMENSION_GUIDE = {
     "evidence": "Strength of evidence: 10 = randomized human data, 7 = human pilot, 4 = animal, 2 = bench only.",
     "impact": "People who would benefit times how much it matters to them.",
     "buildability": "How soon a small team can build a working prototype with existing parts and methods (10 = months).",
-    "winnability": "Whether a new company can beat whoever is already there: open field, a clear edge, or defensible IP.",
+    "winnability": ("Whether a new company can beat whoever is already there: open field, a clear edge, or defensible "
+                    "IP. 0-3 when the lab's own spinout or a funded company already sells, has filed or exclusively "
+                    "licensed this exact product, unless there is a clear wedge they are not taking."),
     "regulatory": "Lightness of the path to market (10 = wellness or Class I, 5 = 510(k), 2 = PMA or drug approval).",
     "capital_efficiency": "Capital needed to reach clinical proof or first revenue (10 = under $1M, 1 = over $100M).",
     "funding_fit": "How well it matches grants and non-dilutive programs open now.",
@@ -329,6 +401,18 @@ IDEA_PLAN_SCHEMA = {
     "additionalProperties": False,
 }
 
+# --------------------------------------------------------------------------- unmet needs
+
+NEED_IDEA = """\
+A study shows that patients are poorly served today: {need}
+
+Find a product a new company could build to close this gap. The company builds \
+products of these kinds: {kinds}.
+
+The study that found the gap:
+{title} ({venue}, {published}) {url}
+{abstract}"""
+
 # --------------------------------------------------------------------------- web scout
 
 WEB_SCOUT_PROMPT = """\
@@ -338,7 +422,11 @@ on these topics: {topics}.
 Look for results that could become a product: new devices, diagnostics, sensing \
 methods, software validated on patients, or tools, especially ones tested in \
 people. Prefer primary sources (journal pages, preprint servers, university \
-press releases about a specific paper). Aim for up to {limit} results."""
+press releases about a specific paper). Include conference abstracts presented \
+in that window and newly announced grants or small-business awards: they show \
+work before a journal paper does, and before a company forms around it. Also \
+include rigorous studies showing that a widely used product or standard of care \
+fails patients. Aim for up to {limit} results."""
 
 WEB_SCOUT_EXTRACT_PROMPT = """\
 List the distinct research results described in these notes. Use only results \

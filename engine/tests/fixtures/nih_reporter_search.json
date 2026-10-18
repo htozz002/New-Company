@@ -1,0 +1,37 @@
+{
+  "meta": {"search_id": "synthetic", "total": 3, "offset": 0, "limit": 500},
+  "results": [
+    {
+      "appl_id": 90000001,
+      "project_num": "1R43HL900001-01",
+      "project_title": "A  wearable patch to   detect early heart failure decompensation",
+      "abstract_text": "Synthetic test record. Phase I will show that a chest patch tracks lung fluid in 40 patients.",
+      "activity_code": "R43",
+      "award_type": "1",
+      "award_notice_date": "2026-10-14T00:00:00",
+      "award_amount": 305000,
+      "agency_ic_admin": {"code": "HL", "abbreviation": "NHLBI", "name": "National Heart, Lung, and Blood Institute"},
+      "organization": {"org_name": "EXAMPLE SENSORS, INC."},
+      "principal_investigators": [{"full_name": "Ada Example"}, {"full_name": "Ben Example"}],
+      "contact_pi_name": "EXAMPLE, ADA"
+    },
+    {
+      "appl_id": 90000002,
+      "project_num": "1R01EB900002-01",
+      "project_title": "Microneedle sensing of drug levels in interstitial fluid",
+      "abstract_text": "Synthetic test record. Aim 1 validates the sensor in 20 volunteers.",
+      "activity_code": "R01",
+      "award_type": "1",
+      "award_notice_date": "2026-10-12T00:00:00",
+      "agency_ic_admin": {"abbreviation": "NIBIB"},
+      "organization": {"org_name": "EXAMPLE UNIVERSITY"},
+      "principal_investigators": [],
+      "contact_pi_name": "LAB, CARA"
+    },
+    {
+      "appl_id": 90000003,
+      "project_title": "Missing abstract is skipped",
+      "abstract_text": ""
+    }
+  ]
+}

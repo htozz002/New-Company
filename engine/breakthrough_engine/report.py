@@ -37,6 +37,9 @@ def render_brief(opp: dict, paper: Paper) -> str:
         f"{paper.venue} · {paper.published}".strip(" ·"),
         "",
     ]
+    if paper.extra.get("need_source"):
+        title, url = paper.extra.get("need_source_title") or "the source study", paper.extra.get("need_source_url")
+        out += ["**Unmet need found in:** " + (f"[{title}]({url})" if url else title), ""]
     if opp.get("idea_plan"):
         plan = opp["idea_plan"]
         out += ["## The breakthrough this idea needs", "",
@@ -123,16 +126,30 @@ def render_brief(opp: dict, paper: Paper) -> str:
     return "\n".join(out)
 
 
-def leaderboard(opps: list[dict], papers: dict[str, Paper]) -> str:
-    rows = ["| # | Score | Verdict | Opportunity | Status | Brief |", "| --- | --- | --- | --- | --- | --- |"]
+def leaderboard(opps: list[dict], papers: dict[str, Paper], owned: list[tuple[Paper, dict]] = ()) -> str:
+    rows = ["| # | Score | Verdict | Opportunity | Origin | Status | Brief |",
+            "| --- | --- | --- | --- | --- | --- | --- |"]
     for opp in opps:
         if opp["composite"] is None:
             continue
         paper = papers.get(opp["paper_key"])
         name = (opp.get("brief") or {}).get("product_name") or (paper.title if paper else "?")
         brief = f"[open]({opp['report_path']})" if opp.get("report_path") else ""
-        rows.append(f"| {opp['id']} | {opp['composite']:.0f} | {opp['verdict']} | {_cell(name)} | {opp['status']} | {brief} |")
-    return "\n".join(["# Opportunity leaderboard", "", *rows, ""])
+        rows.append(f"| {opp['id']} | {opp['composite']:.0f} | {opp['verdict']} | {_cell(name)} | {opp['origin']} | "
+                    f"{opp['status']} | {brief} |")
+    out = ["# Opportunity leaderboard", "", *rows, ""]
+    if owned:
+        out += ["## Already owned", "", "Screened out before judging because someone already owns the product.", "",
+                "| Research | Owner | Evidence | Adjacent product |", "| --- | --- | --- | --- |"]
+        out += [f"| {_link(p)} | {_cell(c['owner'])} | {_cell(c['evidence'])} | {_cell(c['wedge'])} |" for p, c in owned]
+        out.append("")
+    return "\n".join(out)
+
+
+def _link(paper: Paper | None) -> str:
+    if paper is None:
+        return "?"
+    return f"[{_cell(paper.title)}]({paper.url})" if paper.url else _cell(paper.title)
 
 
 def _cell(text: str) -> str:

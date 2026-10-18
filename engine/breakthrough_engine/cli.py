@@ -11,7 +11,7 @@ from pathlib import Path
 from . import report
 from .config import Config
 from .llm import LLM, LLMError
-from .stages import design, ideate, judge, scout, triage
+from .stages import design, ideate, judge, needs, ownership, scout, triage
 from .store import Store
 
 
@@ -21,9 +21,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("discover", help="Full discovery run: scout, triage, judge, design")
+    p = sub.add_parser("discover", help="Full discovery run: scout, triage, ownership, judge, needs, design")
     p.add_argument("--days", type=int, help="look back this many days (default from config)")
-    p.add_argument("--sources", help="comma-separated: europepmc,biorxiv,medrxiv,clinicaltrials,web")
+    p.add_argument("--sources", help="comma-separated: europepmc,biorxiv,medrxiv,clinicaltrials,nih_reporter,web")
     p.add_argument("--max-triage", type=int, help="cap on items screened this run")
 
     p = sub.add_parser("scout", help="Fetch new research only (no Claude calls unless the web source is used)")
@@ -32,7 +32,11 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("triage", help="Screen untriaged research")
     p.add_argument("--limit", type=int)
+    p = sub.add_parser("ownership", help="Check triage survivors for a spinout, license or company that owns them")
+    p.add_argument("--limit", type=int)
     p = sub.add_parser("judge", help="Research and score the best triage survivors")
+    p.add_argument("--limit", type=int)
+    p = sub.add_parser("needs", help="Send studies that show an unmet need to idea mode")
     p.add_argument("--limit", type=int)
     p = sub.add_parser("design", help="Write product briefs for the top scored opportunities")
     p.add_argument("--limit", type=int)
@@ -81,15 +85,22 @@ def main(argv: list[str] | None = None) -> int:
             _print(scout.run(cfg, store, get_llm() if "web" in cfg.sources else None))
         elif args.command == "triage":
             _print(triage.run(cfg, store, get_llm(), args.limit))
+        elif args.command == "ownership":
+            _print(ownership.run(cfg, store, get_llm(), args.limit))
         elif args.command == "judge":
             _print(judge.run(cfg, store, get_llm(), args.limit))
+        elif args.command == "needs":
+            _print(needs.run(cfg, store, get_llm(), args.limit))
         elif args.command == "design":
             _print(design.run(cfg, store, get_llm(), args.limit))
         elif args.command == "discover":
             engine = get_llm()
             result = {"scout": scout.run(cfg, store, engine if "web" in cfg.sources else None)}
             result["triage"] = triage.run(cfg, store, engine, args.max_triage)
+            if cfg.check_ownership:
+                result["ownership"] = ownership.run(cfg, store, engine)
             result["judge"] = judge.run(cfg, store, engine)
+            result["needs"] = needs.run(cfg, store, engine)
             result["design"] = design.run(cfg, store, engine)
             _print(result)
             _write_leaderboard(cfg, store)
@@ -145,7 +156,7 @@ def _summarize(store: Store, opp_id: int) -> None:
 def _write_leaderboard(cfg: Config, store: Store) -> str:
     opps = store.opportunities()
     papers = {o["paper_key"]: store.get_paper(o["paper_key"]) for o in opps if o["paper_key"]}
-    text = report.leaderboard(opps, papers)
+    text = report.leaderboard(opps, papers, store.owned())
     (Path(cfg.output_dir) / "leaderboard.md").write_text(text)
     return text
 
