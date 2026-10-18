@@ -1,0 +1,21 @@
+{
+  "studies": [
+    {
+      "protocolSection": {
+        "identificationModule": {"nctId": "NCT09000001", "briefTitle": "Wearable Patch for Heart Failure Monitoring"},
+        "statusModule": {"overallStatus": "RECRUITING", "studyFirstPostDateStruct": {"date": "2026-10-13"}, "startDateStruct": {"date": "2026-11"}},
+        "sponsorCollaboratorsModule": {"leadSponsor": {"name": "Example Hospital", "class": "OTHER"}},
+        "descriptionModule": {"briefSummary": "Synthetic test record. A patch measures lung fluid in 80 patients."},
+        "conditionsModule": {"conditions": ["Heart Failure"]},
+        "designModule": {"phases": ["NA"]},
+        "armsInterventionsModule": {"interventions": [{"type": "DEVICE", "name": "Fluid patch"}]}
+      }
+    },
+    {
+      "protocolSection": {
+        "identificationModule": {"nctId": "NCT09000002", "briefTitle": "Missing summary is skipped"},
+        "statusModule": {"overallStatus": "NOT_YET_RECRUITING"}
+      }
+    }
+  ]
+}
