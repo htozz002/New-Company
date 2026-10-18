@@ -1,0 +1,36 @@
+{
+  "version": "6.9",
+  "hitCount": 3,
+  "nextCursorMark": "AoIIP4AAACg0MTIzNDU2Nw==",
+  "resultList": {
+    "result": [
+      {
+        "id": "41000001",
+        "source": "MED",
+        "pmid": "41000001",
+        "doi": "10.1000/example.wearable.2026",
+        "title": "A soft wearable <i>ultrasound</i> patch for continuous bladder monitoring",
+        "authorString": "Doe J, Roe R.",
+        "journalInfo": {"journal": {"title": "Example Journal of Devices"}},
+        "abstractText": "<h4>Background</h4>Synthetic test record. We built a patch and tested it in 24 adults.",
+        "firstPublicationDate": "2026-10-12",
+        "citedByCount": 0
+      },
+      {
+        "id": "PPR900001",
+        "source": "PPR",
+        "title": "Synthetic preprint about a breath sensor",
+        "authorString": "Poe A.",
+        "bookOrReportDetails": {"publisher": "medRxiv"},
+        "abstractText": "Synthetic test record for parsing.",
+        "firstPublicationDate": "2026-10-13"
+      },
+      {
+        "id": "41000002",
+        "source": "MED",
+        "title": "Record without an abstract is skipped",
+        "firstPublicationDate": "2026-10-13"
+      }
+    ]
+  }
+}

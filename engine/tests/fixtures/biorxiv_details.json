@@ -1,0 +1,9 @@
+{
+  "messages": [{"status": "ok", "category": "all", "interval": "2026-10-10:2026-10-17", "cursor": 0, "count": 4, "count_new_papers": "3", "total": "4"}],
+  "collection": [
+    {"title": "A wearable sensor that tracks sweat cortisol in real time", "authors": "A, B.", "author_corresponding": "A", "author_corresponding_institution": "Example U", "doi": "10.1101/2026.10.01.000001", "date": "2026-10-11", "version": "1", "type": "new results", "license": "cc_by", "category": "bioengineering", "jatsxml": "", "abstract": "Synthetic test record. Wearable sensor measured cortisol in sweat of 30 volunteers.", "published": "NA", "server": "bioRxiv"},
+    {"title": "A wearable sensor that tracks sweat cortisol in real time", "authors": "A, B.", "author_corresponding": "A", "author_corresponding_institution": "Example U", "doi": "10.1101/2026.10.01.000001", "date": "2026-10-14", "version": "2", "type": "new results", "license": "cc_by", "category": "bioengineering", "jatsxml": "", "abstract": "Synthetic test record, version 2. Wearable sensor measured cortisol in sweat of 30 volunteers.", "published": "NA", "server": "bioRxiv"},
+    {"title": "Protein folding in yeast mitochondria", "authors": "C.", "author_corresponding": "C", "author_corresponding_institution": "Example U", "doi": "10.1101/2026.10.02.000002", "date": "2026-10-12", "version": "1", "type": "new results", "license": "cc_by", "category": "cell biology", "jatsxml": "", "abstract": "Synthetic test record unrelated to any topic.", "published": "NA", "server": "bioRxiv"},
+    {"title": "", "authors": "", "doi": "10.1101/2026.10.03.000003", "date": "2026-10-12", "version": "1", "abstract": "", "server": "bioRxiv"}
+  ]
+}
