@@ -43,6 +43,8 @@ def fetch(source: str, cfg: Config, since: date, until: date, llm: LLM | None) -
     if source == "clinicaltrials":
         return [p for topic in cfg.topics for p in clinicaltrials.search(topic, since, cfg.max_per_topic)]
     if source == "nih_reporter":
+        # A one-week window is often empty while awards are being posted; the store skips grants it has seen.
+        since = min(since, until - timedelta(days=cfg.nih_lookback_days))
         return [p for topic in cfg.topics for p in nih_reporter.search(topic, since, until, cfg.max_per_topic)]
     if source == "web":
         if llm is None:

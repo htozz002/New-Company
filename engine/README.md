@@ -98,7 +98,7 @@ Pass `--config my.json` to override any default in `breakthrough_engine/config.p
 }
 ```
 
-Settings added after the first scan: `check_ownership` (on by default), `max_ownership_checks` (30 a run), `ownership_searches` (3 per check), `need_threshold` (the unmet-need score, 0 to 10, that sends a study to idea mode; default 7) and `max_needs` (2 a run).
+Settings added after the first scan: `check_ownership` (on by default), `max_ownership_checks` (30 a run), `ownership_searches` (3 per check), `need_threshold` (the unmet-need score, 0 to 10, that sends a study to idea mode; default 7), `max_needs` (2 a run) and `nih_lookback_days` (30: RePORTER posts new awards weeks late, so NIH grants always get at least this window).
 
 ## Cost
 

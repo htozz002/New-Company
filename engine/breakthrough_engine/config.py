@@ -57,6 +57,8 @@ class Config:
     sources: list[str] = field(
         default_factory=lambda: ["europepmc", "biorxiv", "medrxiv", "clinicaltrials", "nih_reporter"])
     lookback_days: int = 7
+    # NIH RePORTER posts new awards weeks late, so its window never drops below this.
+    nih_lookback_days: int = 30
     max_per_topic: int = 50
     max_preprints_scanned: int = 1500
 

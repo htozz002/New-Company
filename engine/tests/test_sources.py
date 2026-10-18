@@ -6,7 +6,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from breakthrough_engine.config import Config
 from breakthrough_engine.sources import biorxiv, clinicaltrials, europepmc, nih_reporter
+from breakthrough_engine.stages import scout
+from breakthrough_engine.store import Store
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -98,3 +101,11 @@ def test_cli_runs_without_the_claude_sdk():
     code = "import sys; sys.modules['anthropic'] = None; from breakthrough_engine import cli; cli.main(['config'])"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_scout_looks_back_a_month_for_nih_grants(monkeypatch, tmp_path):
+    windows = []
+    monkeypatch.setattr(nih_reporter, "search", lambda topic, since, until, limit: windows.append((since, until)) or [])
+    cfg = Config(db_path=str(tmp_path / "engine.db"), topics=["biosensor"], sources=["nih_reporter"], lookback_days=7)
+    scout.run(cfg, Store(cfg.db_path), today=date(2026, 10, 18))
+    assert windows == [(date(2026, 9, 18), date(2026, 10, 18))]
