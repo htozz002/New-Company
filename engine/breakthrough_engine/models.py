@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 class Paper:
     """One piece of research: a paper, a preprint, or a clinical trial."""
 
-    source: str  # europepmc | biorxiv | medrxiv | clinicaltrials | web | manual
+    source: str  # europepmc | biorxiv | medrxiv | clinicaltrials | nih_reporter | web | manual | idea | need
     source_id: str
     title: str
     abstract: str
@@ -17,7 +17,7 @@ class Paper:
     published: str = ""  # YYYY-MM-DD
     venue: str = ""
     authors: str = ""
-    kind: str = "paper"  # paper | preprint | trial | idea
+    kind: str = "paper"  # paper | preprint | trial | grant | idea
     extra: dict = field(default_factory=dict)
 
     @property

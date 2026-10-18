@@ -18,7 +18,21 @@ class SourceError(RuntimeError):
 def get_json(url: str, params: dict | None = None, timeout: float = 30.0, retries: int = 3) -> dict:
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    return _request(urllib.request.Request(url, headers=_headers()), timeout, retries)
+
+
+def post_json(url: str, body: dict, timeout: float = 30.0, retries: int = 3) -> dict:
+    headers = {**_headers(), "Content-Type": "application/json"}
+    request = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers=headers, method="POST")
+    return _request(request, timeout, retries)
+
+
+def _headers() -> dict:
+    return {"User-Agent": USER_AGENT, "Accept": "application/json"}
+
+
+def _request(request: urllib.request.Request, timeout: float, retries: int) -> dict:
+    url = request.full_url
     delay = 2.0
     for attempt in range(retries + 1):
         try:

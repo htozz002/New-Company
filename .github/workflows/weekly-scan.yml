@@ -1,0 +1,76 @@
+name: Weekly research scan
+
+# Runs `bte discover` over the past week every Monday. It stays off until an
+# ANTHROPIC_API_KEY repository secret exists. GitHub's runners can reach the
+# research APIs that the project's cloud sandbox blocks.
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"  # Mondays, 13:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-scan
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.key.outputs.ready }}
+    steps:
+      - id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Weekly scan skipped: add an ANTHROPIC_API_KEY repository secret to turn it on."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  scan:
+    needs: check
+    if: needs.check.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      # The database remembers what earlier runs saw and judged, so nothing is
+      # paid for twice. A cache unused for 7 days can be evicted; the run then
+      # starts fresh, which only loses retries of failed items.
+      - name: Restore the engine database
+        uses: actions/cache/restore@v4
+        with:
+          path: engine/engine.db
+          key: engine-db-${{ github.run_id }}
+          restore-keys: engine-db-
+      - name: Discover
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: bte discover --days 7
+      - name: Save the engine database
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: engine/engine.db
+          key: engine-db-${{ github.run_id }}
+      - name: Upload the leaderboard and briefs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-${{ github.run_id }}
+          path: engine/output
+          retention-days: 90
+          if-no-files-found: warn

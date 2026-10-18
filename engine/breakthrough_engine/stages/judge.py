@@ -9,6 +9,7 @@ from ..config import Config
 from ..llm import LLM, LLMError
 from ..models import Paper
 from ..store import Store
+from . import ownership
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +20,8 @@ def run(cfg: Config, store: Store, llm: LLM, limit: int | None = None) -> dict:
     for paper in papers:
         # A paper whose judging failed last run keeps its opportunity and is retried.
         opp_id = store.discovery_opportunity_id(paper.key) or store.create_opportunity("discovery", paper_key=paper.key)
-        if judge_one(opp_id, paper, cfg, store, llm):
+        check = ownership.context_block(store.get_ownership(paper.key))
+        if judge_one(opp_id, paper, cfg, store, llm, extra_context=check):
             judged += 1
         else:
             failed += 1

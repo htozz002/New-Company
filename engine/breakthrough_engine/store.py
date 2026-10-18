@@ -34,11 +34,22 @@ CREATE TABLE IF NOT EXISTS triage (
     buildability_score INTEGER,
     is_candidate INTEGER,
     reason TEXT,
-    triaged_at TEXT NOT NULL
+    triaged_at TEXT NOT NULL,
+    unmet_need_score INTEGER,
+    need TEXT
+);
+CREATE TABLE IF NOT EXISTS ownership (
+    paper_key TEXT PRIMARY KEY REFERENCES papers(key),
+    status TEXT NOT NULL,              -- open | contested | owned | unknown
+    owner TEXT,
+    evidence TEXT,
+    wedge TEXT,
+    sources TEXT,                      -- JSON list of {title, url}
+    checked_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS opportunities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    origin TEXT NOT NULL,              -- discovery | idea | evaluate
+    origin TEXT NOT NULL,              -- discovery | idea | evaluate | need
     paper_key TEXT REFERENCES papers(key),
     idea_text TEXT,
     idea_plan TEXT,                    -- JSON, idea mode only
@@ -58,6 +69,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_opportunity_per_paper
     ON opportunities(paper_key) WHERE origin = 'discovery';
 """
 
+# Columns added after the first release. Databases made before them get the
+# columns on open; values in older rows stay empty.
+ADDED_COLUMNS = {"triage": [("unmet_need_score", "INTEGER"), ("need", "TEXT")]}
+
+# Paper sources created together with their own opportunity, never screened.
+OWN_OPPORTUNITY_SOURCES = ("idea", "need", "manual")
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -68,6 +86,15 @@ class Store:
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        for table, columns in ADDED_COLUMNS.items():
+            have = {row["name"] for row in self.db.execute(f"PRAGMA table_info({table})")}
+            for name, kind in columns:
+                if name not in have:
+                    self.db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+        self.db.commit()
 
     def close(self) -> None:
         self.db.close()
@@ -92,40 +119,91 @@ class Store:
         return _paper(row) if row else None
 
     def untriaged_papers(self, limit: int | None = None) -> list[Paper]:
+        # Ideas, needs and hand-picked papers already have their own opportunity,
+        # so screening them would judge them twice.
         sql = ("SELECT p.* FROM papers p LEFT JOIN triage t ON t.paper_key = p.key "
-               "WHERE t.paper_key IS NULL ORDER BY p.published DESC")
-        rows = self.db.execute(sql + (f" LIMIT {int(limit)}" if limit else "")).fetchall()
+               f"WHERE t.paper_key IS NULL AND p.source NOT IN ({_marks(OWN_OPPORTUNITY_SOURCES)}) "
+               "ORDER BY p.published DESC")
+        rows = self.db.execute(sql + (f" LIMIT {int(limit)}" if limit else ""), OWN_OPPORTUNITY_SOURCES).fetchall()
         return [_paper(r) for r in rows]
 
     # triage ---------------------------------------------------------------
 
     def save_triage(self, paper_key: str, item: dict) -> None:
         self.db.execute(
-            "INSERT OR REPLACE INTO triage VALUES (?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO triage (paper_key, product_type, breakthrough_score, buildability_score, "
+            "is_candidate, reason, triaged_at, unmet_need_score, need) VALUES (?,?,?,?,?,?,?,?,?)",
             (paper_key, item["product_type"], item["breakthrough_score"], item["buildability_score"],
-             int(item["is_candidate"]), item["reason"], _now()),
+             int(item["is_candidate"]), item["reason"], _now(), item.get("unmet_need_score", 0), item.get("need", "")),
         )
         self.db.commit()
 
     def candidates_to_judge(self, allowed_types: list[str], threshold: float, limit: int) -> list[Paper]:
-        """Triage survivors not yet judged (or whose judging failed), best first."""
-        marks = ",".join("?" * len(allowed_types))
+        """Triage survivors not yet judged (or whose judging failed), best first.
+
+        Papers the ownership check found already owned are left out; papers it
+        has not checked are kept.
+        """
         rows = self.db.execute(
-            f"""SELECT p.* FROM papers p JOIN triage t ON t.paper_key = p.key
+            f"""SELECT p.* FROM ({_SURVIVORS.format(marks=_marks(allowed_types))}) p
                 LEFT JOIN opportunities o ON o.paper_key = p.key AND o.origin = 'discovery'
-                WHERE t.is_candidate = 1 AND t.product_type IN ({marks})
-                  AND (o.id IS NULL OR o.status = 'failed')
-                  AND (t.breakthrough_score + t.buildability_score) / 2.0 >= ?
-                ORDER BY (t.breakthrough_score + t.buildability_score) DESC, p.published DESC
+                LEFT JOIN ownership w ON w.paper_key = p.key
+                WHERE (o.id IS NULL OR o.status = 'failed') AND (w.status IS NULL OR w.status != 'owned')
+                ORDER BY p.triage_rank DESC, p.published DESC
                 LIMIT ?""",
             (*allowed_types, threshold, limit),
         ).fetchall()
         return [_paper(r) for r in rows]
 
+    def candidates_to_check(self, allowed_types: list[str], threshold: float, limit: int) -> list[Paper]:
+        """Triage survivors with no ownership check and no opportunity yet, best first."""
+        rows = self.db.execute(
+            f"""SELECT p.* FROM ({_SURVIVORS.format(marks=_marks(allowed_types))}) p
+                LEFT JOIN opportunities o ON o.paper_key = p.key AND o.origin = 'discovery'
+                LEFT JOIN ownership w ON w.paper_key = p.key
+                WHERE o.id IS NULL AND w.paper_key IS NULL
+                ORDER BY p.triage_rank DESC, p.published DESC
+                LIMIT ?""",
+            (*allowed_types, threshold, limit),
+        ).fetchall()
+        return [_paper(r) for r in rows]
+
+    def needs_to_explore(self, threshold: int, limit: int) -> list[tuple[Paper, str]]:
+        """Items that showed an unmet need and have not been sent to idea mode yet, strongest first."""
+        rows = self.db.execute(
+            """SELECT p.*, t.need AS need_text FROM papers p JOIN triage t ON t.paper_key = p.key
+               LEFT JOIN papers n ON n.key = 'need:' || p.key
+               WHERE t.unmet_need_score >= ? AND n.key IS NULL
+               ORDER BY t.unmet_need_score DESC, p.published DESC
+               LIMIT ?""",
+            (threshold, limit),
+        ).fetchall()
+        return [(_paper(r), r["need_text"] or "") for r in rows]
+
     def triage_counts(self) -> dict:
         row = self.db.execute(
             "SELECT COUNT(*) AS triaged, COALESCE(SUM(is_candidate), 0) AS candidates FROM triage").fetchone()
         return dict(row)
+
+    # ownership ------------------------------------------------------------
+
+    def save_ownership(self, paper_key: str, result: dict, sources: list[dict]) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO ownership VALUES (?,?,?,?,?,?,?)",
+            (paper_key, result["status"], result["owner"], result["evidence"], result["wedge"],
+             json.dumps(sources), _now()),
+        )
+        self.db.commit()
+
+    def get_ownership(self, paper_key: str) -> dict | None:
+        row = self.db.execute("SELECT * FROM ownership WHERE paper_key = ?", (paper_key,)).fetchone()
+        return _ownership(row) if row else None
+
+    def owned(self) -> list[tuple[Paper, dict]]:
+        """Papers the ownership check screened out, newest check first."""
+        rows = self.db.execute(
+            "SELECT * FROM ownership WHERE status = 'owned' ORDER BY checked_at DESC, paper_key").fetchall()
+        return [(self.get_paper(r["paper_key"]), _ownership(r)) for r in rows]
 
     # opportunities --------------------------------------------------------
 
@@ -167,6 +245,24 @@ class Store:
             args.append(min_composite)
         sql += " ORDER BY composite DESC NULLS LAST, id DESC"
         return [_opportunity(r) for r in self.db.execute(sql, args).fetchall()]
+
+
+# Triage survivors: candidates of an allowed type whose average triage score
+# meets the threshold. Takes the allowed types, then the threshold.
+_SURVIVORS = """SELECT p.*, t.breakthrough_score + t.buildability_score AS triage_rank
+    FROM papers p JOIN triage t ON t.paper_key = p.key
+    WHERE t.is_candidate = 1 AND t.product_type IN ({marks})
+      AND (t.breakthrough_score + t.buildability_score) / 2.0 >= ?"""
+
+
+def _marks(values: list) -> str:
+    return ",".join("?" * len(values))
+
+
+def _ownership(row: sqlite3.Row) -> dict:
+    data = dict(row)
+    data["sources"] = json.loads(data["sources"] or "[]")
+    return data
 
 
 def _paper(row: sqlite3.Row) -> Paper:

@@ -7,34 +7,49 @@ plumbing (storage, routing, scoring, reports), not the quality of any judgment.
 import re
 from datetime import date
 
-from breakthrough_engine import prompts
+import sqlite3
+
+from breakthrough_engine import prompts, report
 from breakthrough_engine.config import Config
 from breakthrough_engine.llm import Research
 from breakthrough_engine.models import Paper
-from breakthrough_engine.stages import design, ideate, judge, triage
+from breakthrough_engine.stages import design, ideate, judge, needs, ownership, triage
 from breakthrough_engine.stages.judge import composite_score
 from breakthrough_engine.store import Store
 
 
 class FakeLLM:
-    def __init__(self, score=8):
+    def __init__(self, score=8, owned=(), needs=False):
         self.score = score
+        self.owned = set(owned)  # titles the ownership check finds owned
+        self.needs = needs  # whether non-candidates show an unmet need
         self.calls = []
+        self.prompts = []
 
     def research(self, name, system, prompt, **_):
         self.calls.append(name)
+        self.prompts.append((name, prompt))
         return Research(text=f"{name} notes", sources=[{"title": "Example source", "url": "https://example.org/a"}])
 
     def structured(self, name, system, prompt, schema, **_):
         self.calls.append(name)
+        self.prompts.append((name, prompt))
         if name == "triage":
             refs = re.findall(r'<research ref="(R\d+)"', prompt)
             # The first item is a strong device candidate, the rest are not.
             return {"items": [
                 {"ref": r, "product_type": "device" if i == 0 else "drug", "breakthrough_score": 9 if i == 0 else 3,
-                 "buildability_score": 8 if i == 0 else 2, "is_candidate": i == 0, "reason": "test"}
+                 "buildability_score": 8 if i == 0 else 2, "is_candidate": i == 0,
+                 "unmet_need_score": 9 if self.needs and i > 0 else 0,
+                 "need": "A widely used alert misses most cases." if self.needs and i > 0 else "", "reason": "test"}
                 for i, r in enumerate(refs)
             ]}
+        if name == "ownership_verdict":
+            title = re.search(r"<title>(.*?)</title>", prompt).group(1)
+            if title in self.owned:
+                return {"status": "owned", "owner": "SpinoutCo", "evidence": "The lab's spinout sells it.",
+                        "wedge": "A pediatric version."}
+            return {"status": "open", "owner": "", "evidence": "Nobody found.", "wedge": ""}
         if name == "judge":
             return {
                 "scores": {d: {"score": self.score, "rationale": "test"} for d in prompts.DIMENSION_GUIDE},
@@ -151,6 +166,85 @@ def test_composite_weights():
     perfect = {d: {"score": 10} for d in cfg.weights}
     assert composite_score(perfect, cfg.weights) == 100.0
     assert abs(sum(cfg.weights.values()) - 1.0) < 1e-9
+
+
+def test_easy_to_copy_product_stays_below_design_bar():
+    # The October 2026 scan's top score: a randomized trial of an LLM tool that is
+    # easy to build and lightly regulated, but that Epic and funded startups
+    # already sell. It scored 63.5 under the old weights and was still dropped.
+    scores = {"breakthrough": 4, "evidence": 9, "impact": 5, "buildability": 9, "winnability": 2,
+              "regulatory": 8, "capital_efficiency": 6, "funding_fit": 5}
+    scored = {d: {"score": v} for d, v in scores.items()}
+    cfg = Config()
+    assert composite_score(scored, cfg.weights) < cfg.design_min_composite
+    assert cfg.weights["winnability"] == max(cfg.weights.values())
+
+
+def test_owned_candidates_are_not_judged(tmp_path):
+    cfg = Config(db_path=str(tmp_path / "engine.db"), output_dir=str(tmp_path / "out"), triage_batch_size=1)
+    store = make_store(tmp_path)
+    store.add_papers([paper(1), paper(2), paper(3)])
+    llm = FakeLLM(owned={"Finding 2"})
+    assert triage.run(cfg, store, llm)["candidates"] == 3
+
+    assert ownership.run(cfg, store, llm) == {"checked": 3, "owned": 1, "failed": 0}
+    assert ownership.run(cfg, store, llm) == {"checked": 0, "owned": 0, "failed": 0}  # never checked twice
+
+    assert judge.run(cfg, store, llm) == {"judged": 2, "failed": 0}
+    assert store.discovery_opportunity_id("biorxiv:10.1101/2") is None
+    landscape_prompts = [p for name, p in llm.prompts if name == "landscape"]
+    assert all('<ownership_check status="open">' in p for p in landscape_prompts)
+
+    owned = store.owned()
+    assert [(p.title, c["owner"]) for p, c in owned] == [("Finding 2", "SpinoutCo")]
+    board = report.leaderboard(store.opportunities(), {}, owned)
+    assert "## Already owned" in board and "[Finding 2](https://doi.org/10.1101/2)" in board
+    assert "A pediatric version." in board
+
+
+def test_unmet_need_goes_to_idea_mode(tmp_path):
+    cfg = Config(db_path=str(tmp_path / "engine.db"), output_dir=str(tmp_path / "out"))
+    store = make_store(tmp_path)
+    store.add_papers([paper(1), paper(2)])
+    llm = FakeLLM(needs=True)
+    assert triage.run(cfg, store, llm)["unmet_needs"] == 1
+
+    assert needs.run(cfg, store, llm) == {"explored": 1, "failed": 0}
+    assert needs.run(cfg, store, llm) == {"explored": 0, "failed": 0}  # each study is explored once
+    assert triage.run(cfg, store, llm)["screened"] == 0  # the need's own record is not screened again
+    assert llm.calls[-4:] == ["idea_research", "idea_plan", "landscape", "judge"]
+    idea_prompt = next(p for name, p in llm.prompts if name == "idea_research")
+    assert "A widely used alert misses most cases." in idea_prompt
+
+    opp = store.opportunities(status="judged")[0]
+    assert opp["origin"] == "need" and opp["paper_key"].startswith("need:biorxiv:")
+    source_key = store.get_paper(opp["paper_key"]).extra["need_source"]
+    assert store.get_paper(source_key).title in idea_prompt
+
+    # A need meets the same design bar as a discovery.
+    assert design.run(cfg, store, llm) == {"designed": 1, "failed": 0}
+    brief = open(store.get_opportunity(opp["id"])["report_path"]).read()
+    assert "**Unmet need found in:**" in brief and "origin: need" in brief
+
+
+def test_old_database_gets_new_columns(tmp_path):
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.executescript("""
+        CREATE TABLE triage (paper_key TEXT PRIMARY KEY, product_type TEXT, breakthrough_score INTEGER,
+            buildability_score INTEGER, is_candidate INTEGER, reason TEXT, triaged_at TEXT NOT NULL);
+        INSERT INTO triage VALUES ('biorxiv:10.1101/1', 'device', 9, 8, 1, 'old row', '2026-10-01T00:00:00+00:00');
+    """)
+    old.commit()
+    old.close()
+
+    store = Store(str(path))
+    store.add_papers([paper(1), paper(2)])
+    store.save_triage("biorxiv:10.1101/2", {"product_type": "drug", "breakthrough_score": 2, "buildability_score": 2,
+                                           "is_candidate": False, "unmet_need_score": 8, "need": "A gap.",
+                                           "reason": "new row"})
+    assert [(p.key, need) for p, need in store.needs_to_explore(7, 5)] == [("biorxiv:10.1101/2", "A gap.")]
+    assert [p.key for p in store.candidates_to_judge(["device"], 6.0, 5)] == ["biorxiv:10.1101/1"]
 
 
 def test_web_scout_keeps_only_urls_it_saw(tmp_path):

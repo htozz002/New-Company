@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 def run(cfg: Config, store: Store, llm: LLM, limit: int | None = None) -> dict:
     papers = store.untriaged_papers(limit)
-    screened = candidates = failed_batches = 0
+    screened = candidates = needs = failed_batches = 0
     for start in range(0, len(papers), cfg.triage_batch_size):
         batch = papers[start:start + cfg.triage_batch_size]
         try:
@@ -28,7 +28,8 @@ def run(cfg: Config, store: Store, llm: LLM, limit: int | None = None) -> dict:
             store.save_triage(paper.key, item)
             screened += 1
             candidates += int(item["is_candidate"])
-    return {"screened": screened, "candidates": candidates, "failed_batches": failed_batches,
+            needs += int(item["unmet_need_score"] >= cfg.need_threshold)
+    return {"screened": screened, "candidates": candidates, "unmet_needs": needs, "failed_batches": failed_batches,
             "remaining": len(papers) - screened}
 
 
@@ -49,6 +50,7 @@ def screen(batch: list[Paper], cfg: Config, llm: LLM) -> list[tuple[Paper, dict]
             continue
         item["breakthrough_score"] = _clamp(item["breakthrough_score"])
         item["buildability_score"] = _clamp(item["buildability_score"])
+        item["unmet_need_score"] = _clamp(item["unmet_need_score"])
         out.append((paper, item))
     if refs:
         # Items the model skipped stay untriaged and are retried next run.

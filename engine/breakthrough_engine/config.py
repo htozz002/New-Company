@@ -26,15 +26,17 @@ DEFAULT_TOPICS = [
 ]
 
 # Score dimensions, each scored 0-10 by the judge. Weights sum to 1.0 and turn
-# the scores into a 0-100 composite. Buildability and winnability are weighted
-# up because the company wants near-term products it can win with.
+# the scores into a 0-100 composite. Winnability carries the most weight: the
+# October 2026 scan found that easy, light-path products scored high even when
+# the lab's own spinout already sold them, so buildability and regulatory gave
+# up weight to it.
 DEFAULT_WEIGHTS = {
     "breakthrough": 0.15,
     "evidence": 0.15,
     "impact": 0.15,
-    "buildability": 0.20,
-    "winnability": 0.10,
-    "regulatory": 0.10,
+    "buildability": 0.15,
+    "winnability": 0.20,
+    "regulatory": 0.05,
     "capital_efficiency": 0.10,
     "funding_fit": 0.05,
 }
@@ -52,8 +54,11 @@ class Config:
 
     # Scout
     topics: list[str] = field(default_factory=lambda: list(DEFAULT_TOPICS))
-    sources: list[str] = field(default_factory=lambda: ["europepmc", "biorxiv", "medrxiv", "clinicaltrials"])
+    sources: list[str] = field(
+        default_factory=lambda: ["europepmc", "biorxiv", "medrxiv", "clinicaltrials", "nih_reporter"])
     lookback_days: int = 7
+    # NIH RePORTER posts new awards weeks late, so its window never drops below this.
+    nih_lookback_days: int = 30
     max_per_topic: int = 50
     max_preprints_scanned: int = 1500
 
@@ -61,6 +66,18 @@ class Config:
     triage_batch_size: int = 15
     triage_threshold: float = 6.0
     allowed_types: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWED_TYPES))
+
+    # Ownership check: a short web search on each triage survivor for a spinout,
+    # a license, or a company already selling the same product. Owned ones are
+    # not judged.
+    check_ownership: bool = True
+    max_ownership_checks: int = 30
+    ownership_searches: int = 3
+
+    # Unmet needs: items that show an existing product or standard of care
+    # failing patients go to idea mode to find what could close the gap.
+    need_threshold: int = 7
+    max_needs: int = 2
 
     # Judge and design
     max_judged: int = 10
@@ -72,6 +89,7 @@ class Config:
     # Effort per stage (low | medium | high | xhigh | max). Triage runs on many
     # abstracts, so it stays cheap; the judgment stages get more thought.
     effort_triage: str = "low"
+    effort_ownership: str = "medium"
     effort_judge: str = "high"
     effort_design: str = "high"
     effort_ideate: str = "high"
