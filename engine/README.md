@@ -73,7 +73,7 @@ bte leaderboard                       # ranked opportunities -> output/leaderboa
 bte show 12                           # print one brief
 
 # Step by step
-bte scout --days 7 --sources europepmc,biorxiv,medrxiv,clinicaltrials,nih_reporter
+bte scout --days 7 --sources europepmc,biorxiv,medrxiv,clinicaltrials,nih_reporter   # no key or SDK needed
 bte triage --limit 300
 bte ownership --limit 30
 bte judge --limit 5

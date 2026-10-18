@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-
-import anthropic
+from typing import TYPE_CHECKING
 
 from .config import DEFAULT_MODEL
+
+if TYPE_CHECKING:
+    import anthropic
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_CONTINUATIONS = 5
@@ -61,6 +63,10 @@ class Usage:
 
 class LLM:
     def __init__(self, model: str = DEFAULT_MODEL, client: anthropic.Anthropic | None = None):
+        # Imported here, not at the top, so commands that make no Claude calls
+        # (scout) run where the SDK can't be installed.
+        import anthropic
+
         self.model = model
         self.client = client or anthropic.Anthropic()
         self.usage = Usage()
@@ -110,6 +116,8 @@ class LLM:
         return Research(text="".join(text_parts).strip(), sources=[{"title": t, "url": u} for u, t in sources.items()])
 
     def _run(self, *, system: str, messages: list[dict], max_tokens: int, label: str, **kwargs):
+        import anthropic
+
         try:
             # Streaming avoids HTTP timeouts on long, high-effort answers.
             with self.client.beta.messages.stream(

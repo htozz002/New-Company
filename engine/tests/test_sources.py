@@ -1,6 +1,8 @@
 """Parser tests against synthetic records shaped like each API's responses."""
 
 import json
+import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -89,3 +91,10 @@ def test_nih_reporter_parses_new_grants(monkeypatch):
     assert university.extra["small_business"] is False
     assert university.authors == "LAB, CARA"
     assert "Small-business" not in university.abstract
+
+
+def test_cli_runs_without_the_claude_sdk():
+    # The weekly database pull runs scout where the anthropic package can't be installed.
+    code = "import sys; sys.modules['anthropic'] = None; from breakthrough_engine import cli; cli.main(['config'])"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
